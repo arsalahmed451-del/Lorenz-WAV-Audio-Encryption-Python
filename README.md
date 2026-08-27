@@ -1,278 +1,821 @@
-# Lorenz Attractor Based Audio Encryption and Decryption in Python
+# Lorenz Attractor Based Audio Encryption and Decryption
 
 ## Project Overview
 
-This project implements audio encryption and decryption using the Lorenz chaotic attractor and XOR operation in Python.
+This project implements a chaotic audio encryption and decryption system in Python using the **Lorenz attractor** and the **XOR operation**.
 
-The implementation extends the Lorenz-based encryption approach from RGB image data to digital audio. A Lorenz chaotic system is used to generate a pseudo-random key sequence, which is combined with 16-bit PCM audio samples using XOR.
+The system generates a chaotic sequence using the three Lorenz state variables **X, Y, and Z**. These floating-point chaotic values are converted into 16-bit fixed-point representations using the **Q8.8 fixed-point format**. The three resulting 16-bit values are then combined using XOR to generate a 16-bit chaotic key stream.
 
-The current implementation is designed specifically for **16-bit PCM WAV audio files**.
+Each 16-bit PCM audio sample is XORed with its corresponding 16-bit chaotic key to produce the encrypted audio. The same Lorenz parameters and initial conditions are used during decryption, allowing the same chaotic key stream to be regenerated and used to recover the original audio.
 
-The project demonstrates:
-
-1. Lorenz attractor generation
-2. Chaotic X, Y, and Z sequence generation
-3. 16-bit chaotic key generation
-4. 16-bit PCM WAV audio processing
-5. XOR-based audio encryption
-6. XOR-based audio decryption
-7. Encrypted and decrypted WAV generation
-8. Test-vector generation
-9. Original-versus-decrypted verification
-10. SHA-256 verification
+The current implementation is specifically designed for **16-bit uncompressed PCM WAV audio**.
 
 ---
 
-## Input Requirements
+## Encryption Method
 
-The current implementation accepts:
+The complete encryption process is:
 
-| Parameter     | Requirement       |
-| ------------- | ----------------- |
-| File format   | WAV               |
-| Encoding      | PCM               |
-| Bit depth     | 16-bit            |
-| Channels      | Mono or Stereo    |
-| Sample format | Signed 16-bit PCM |
+```text
+16-bit PCM WAV Audio
+          ↓
+     Audio Validation
+          ↓
+     Audio Samples
+          ↓
+     Lorenz Attractor
+          ↓
+       X, Y, Z
+          ↓
+     Q8.8 Conversion
+          ↓
+   X16    Y16    Z16
+      \     |     /
+       \    |    /
+        XOR Operations
+             ↓
+    16-bit Chaotic Key
+             ↓
+     Audio Sample XOR Key
+             ↓
+      Encrypted Audio
+```
 
-The program validates the audio file before encryption.
+### Key Generation
+
+The final chaotic key is generated as:
+
+```text
+Final Key = X16 XOR Y16 XOR Z16
+```
+
+where:
+
+* `X16` = 16-bit Q8.8 representation of Lorenz X
+* `Y16` = 16-bit Q8.8 representation of Lorenz Y
+* `Z16` = 16-bit Q8.8 representation of Lorenz Z
+
+The generated key stream contains one 16-bit key for each audio sample.
+
+---
+
+## Decryption Method
+
+The decryption process uses the same chaotic key stream:
+
+```text
+Encrypted Sample XOR Same Key = Original Sample
+```
+
+The XOR property used is:
+
+```text
+A XOR B XOR B = A
+```
+
+Therefore:
+
+```text
+Original Sample XOR Key = Encrypted Sample
+
+Encrypted Sample XOR Key = Original Sample
+```
+
+The decrypted samples are then written back into a WAV file using the original number of channels and sample rate.
+
+---
+
+## Lorenz Chaotic System
+
+The Lorenz system is defined by the following differential equations:
+
+```text
+dx/dt = σ(y - x)
+
+dy/dt = x(ρ - z) - y
+
+dz/dt = xy - βz
+```
+
+The implementation uses the following standard Lorenz parameters:
+
+```text
+σ = 10.0
+
+ρ = 28.0
+
+β = 8/3
+```
+
+The initial conditions are:
+
+```text
+X0 = 1.0
+
+Y0 = 1.0
+
+Z0 = 1.0
+```
+
+The numerical integration time step is:
+
+```text
+dt = 0.01
+```
+
+Euler numerical integration is used to calculate the next Lorenz state:
+
+```text
+x_new = x + dx × dt
+
+y_new = y + dy × dt
+
+z_new = z + dz × dt
+```
+
+---
+
+## Warm-Up Process
+
+The implementation discards the first **1000 Lorenz iterations** before generating the key stream.
+
+```text
+WARMUP_STEPS = 1000
+```
+
+The purpose of the warm-up period is to discard the initial transient portion of the trajectory and begin key generation after the system has evolved from its initial state.
+
+The process is:
+
+```text
+Initial Conditions
+        ↓
+1000 Lorenz Iterations
+        ↓
+Discard Initial Values
+        ↓
+Generate Chaotic Sequence
+```
+
+---
+
+## Q8.8 Fixed-Point Conversion
+
+The Lorenz attractor produces floating-point values.
+
+To generate a 16-bit representation, the system uses the **Q8.8 fixed-point format**.
+
+Q8.8 contains:
+
+```text
+8 bits → Integer portion
+
+8 bits → Fractional portion
+
+Total → 16 bits
+```
+
+The scaling factor is:
+
+```text
+2^8 = 256
+```
+
+Therefore:
+
+```text
+Scaled Value = round(Lorenz Value × 256)
+```
+
+The resulting integer is stored as a 16-bit unsigned representation.
+
+The same conversion is applied independently to:
+
+```text
+X → X16
+
+Y → Y16
+
+Z → Z16
+```
+
+---
+
+## Chaotic Key Generation
+
+After converting the Lorenz variables to 16-bit values:
+
+```text
+X → X16
+Y → Y16
+Z → Z16
+```
+
+the key is generated using XOR:
+
+```text
+XY Key = X16 XOR Y16
+
+Final Key = XY Key XOR Z16
+```
+
+which is equivalent to:
+
+```text
+Final Key = X16 XOR Y16 XOR Z16
+```
+
+The final result is a **16-bit chaotic key stream**.
+
+Each generated key corresponds to one audio sample.
+
+---
+
+## Audio Input Requirements
+
+The current implementation accepts only:
+
+| Parameter             | Requirement       |
+| --------------------- | ----------------- |
+| File format           | WAV               |
+| Encoding              | Uncompressed PCM  |
+| Bit depth             | 16-bit            |
+| Channels              | Mono or Stereo    |
+| Sample representation | Signed 16-bit PCM |
 
 ### Supported
 
 ```text
-16-bit PCM WAV → Accepted
+16-bit PCM WAV
 ```
 
 ### Rejected
 
 ```text
-8-bit WAV  → Rejected
-24-bit WAV → Rejected
-32-bit WAV → Rejected
-MP3        → Rejected
-AAC        → Rejected
-FLAC       → Rejected
+8-bit WAV
+24-bit WAV
+32-bit WAV
+MP3
+AAC
+FLAC
+OGG
+Other unsupported formats
 ```
 
-If an unsupported file is uploaded, the program stops the encryption process and displays an appropriate error message.
+The program validates the file **before encryption begins**.
+
+If an unsupported file is uploaded, the program raises an error and stops processing.
+
+For example, a 24-bit WAV file produces an error indicating that the implementation requires 16-bit PCM WAV audio.
 
 ---
 
-## Methodology
+## Why 16-bit PCM WAV?
 
-The encryption process follows:
+The current implementation deliberately uses 16-bit PCM WAV because each audio sample can be represented directly using a 16-bit value.
 
-```text
-Input WAV Audio
-       ↓
-Audio Validation
-       ↓
-Read 16-bit PCM Samples
-       ↓
-Generate Lorenz Chaotic Sequence
-       ↓
-Generate 16-bit Chaotic Key
-       ↓
-XOR Audio Samples with Key
-       ↓
-Encrypted WAV Audio
-```
-
-The decryption process uses the same chaotic key sequence:
+This creates a simple and controlled relationship:
 
 ```text
-Encrypted WAV Audio
-       ↓
-Read Encrypted Samples
-       ↓
-Generate Same Lorenz Key
-       ↓
-XOR Encrypted Samples with Key
-       ↓
-Decrypted WAV Audio
+16-bit Audio Sample
+        +
+16-bit Chaotic Key
+        ↓
+      XOR
+        ↓
+16-bit Encrypted Sample
 ```
 
-Because XOR is reversible:
-
-```text
-Plaintext XOR Key = Ciphertext
-
-Ciphertext XOR Key = Plaintext
-```
-
-## Key Generation
-
-The Lorenz system initially produces floating-point values.
-
-For compatibility with 16-bit audio samples, the chaotic values are converted into 16-bit integer values.
-
-The conversion is based on:
-
-```text
-16-bit value = round(Lorenz value × 256)
-```
-
-The resulting value is represented as a 16-bit unsigned integer.
-
-The generated chaotic sequence is then used to create a key stream having the same number of elements as the audio sample stream.
+This also avoids complications associated with compressed audio formats and different sample representations.
 
 ---
 
-## Audio Representation
+## Audio Processing
 
-A 16-bit PCM audio sample contains:
+The Python `wave` module is used to read and write WAV files.
 
-```text
-16 bits
-```
-
-and has a signed range of:
+The raw PCM audio bytes are converted into NumPy signed 16-bit integers:
 
 ```text
--32768 to 32767
+WAV Bytes
+   ↓
+NumPy int16
+   ↓
+Audio Samples
 ```
 
-The samples are represented using NumPy `int16`.
+For encryption, the signed `int16` samples are viewed as `uint16` values.
 
-For the XOR operation, the same 16-bit data is viewed in its unsigned representation. This allows the complete 16-bit binary pattern to participate in the XOR operation without changing the underlying sample bits.
+This preserves the exact 16-bit binary representation of each sample while allowing the XOR operation to operate on all 16 bits.
+
+After encryption, the resulting 16-bit data is viewed again as signed `int16` and written to the output WAV file.
 
 ---
 
-## XOR Encryption
+# Program Features
 
-Each audio sample is XORed with the corresponding chaotic key:
+The implementation includes the following features:
+
+### 1. Audio Validation
+
+Checks:
+
+* WAV extension
+* Valid WAV structure
+* PCM encoding
+* 16-bit sample width
+* Mono/stereo channels
+
+### 2. Lorenz Sequence Generation
+
+Generates:
 
 ```text
-Encrypted Sample = Original Sample XOR Chaotic Key
+X sequence
+Y sequence
+Z sequence
 ```
 
-For decryption:
+after a 1000-step warm-up.
+
+### 3. Q8.8 Conversion
+
+Converts the Lorenz floating-point values into 16-bit representations.
+
+### 4. Chaotic Key Generation
+
+Generates:
 
 ```text
-Original Sample = Encrypted Sample XOR Chaotic Key
+X16 XOR Y16 XOR Z16
 ```
 
-The same key sequence must therefore be regenerated during decryption.
+### 5. Audio Encryption
+
+Performs 16-bit XOR encryption.
+
+### 6. Audio Decryption
+
+Uses the same chaotic key to recover the original audio.
+
+### 7. Key Stream Analysis
+
+Calculates:
+
+* Total keys
+* Unique keys
+* Minimum key
+* Maximum key
+* Zero keys
+* Repeated keys
+
+### 8. Encryption Change Analysis
+
+Calculates:
+
+* Total samples
+* Changed samples
+* Unchanged samples
+* Percentage of changed samples
+
+### 9. Correlation Analysis
+
+Calculates the correlation between:
+
+```text
+Original Audio
+       vs
+Encrypted Audio
+```
+
+### 10. SHA-256 Verification
+
+Calculates SHA-256 hashes for:
+
+```text
+Original Samples
+Decrypted Samples
+```
+
+A successful decryption should produce identical hashes.
+
+### 11. Sample-by-Sample Verification
+
+The program directly compares:
+
+```text
+Original Samples
+       vs
+Decrypted Samples
+```
+
+using NumPy.
+
+### 12. Waveform Comparison
+
+Generates a waveform comparison showing:
+
+```text
+Original Audio Waveform
+
+Encrypted Audio Waveform
+
+Decrypted Audio Waveform
+```
+
+### 13. Audio Playback
+
+The notebook provides playback for:
+
+* Original audio
+* Encrypted audio
+* Decrypted audio
+
+### 14. Test Vector Generation
+
+The program generates detailed CSV files containing Lorenz values, keys, original samples, encrypted samples, and decrypted samples.
 
 ---
 
-## Audio Validation
+# Verification and Results
 
-Before encryption, the program checks:
+The implementation performs multiple verification checks.
 
-1. Whether the file is a valid WAV file
-2. Whether the encoding is PCM
-3. Whether the sample width is 16-bit
-4. Number of channels
-5. Sample rate
-6. Number of audio frames
+## Sample-by-Sample Verification
 
-A 24-bit or 32-bit audio file is rejected rather than silently converted.
+The program checks:
 
-This prevents unwanted changes in the original audio representation and keeps the encryption experiment consistent.
+```text
+Original Samples == Decrypted Samples
+```
+
+Expected result:
+
+```text
+True
+```
 
 ---
 
-## Repository Structure
+## SHA-256 Verification
+
+The SHA-256 hash of the original sample data is compared with the SHA-256 hash of the decrypted sample data.
+
+Expected result:
+
+```text
+SHA-256 match: True
+```
+
+This provides an additional verification that the decrypted sample data is identical to the original sample data.
+
+---
+
+## Encryption Change Analysis
+
+The program counts how many samples changed after encryption.
+
+It reports:
+
+```text
+Total samples
+Changed samples
+Unchanged samples
+Percentage changed
+```
+
+This provides a basic measurement of how extensively the encryption operation changes the sample values.
+
+---
+
+## Correlation Analysis
+
+The program calculates the Pearson correlation coefficient between the original and encrypted audio sample sequences.
+
+```text
+Correlation =
+corr(Original Samples, Encrypted Samples)
+```
+
+A lower correlation indicates that the encrypted signal has a weaker linear relationship with the original signal.
+
+Correlation is used here as a basic statistical observation and is not by itself a proof of cryptographic security.
+
+---
+
+# Generated Files
+
+The program generates the following files:
+
+```text
+encrypted_audio.wav
+decrypted_audio.wav
+audio_test_vectors.csv
+lorenz_key_stream.csv
+waveform_comparison.png
+```
+
+## `encrypted_audio.wav`
+
+Contains the encrypted audio samples.
+
+## `decrypted_audio.wav`
+
+Contains the audio recovered after decryption.
+
+## `audio_test_vectors.csv`
+
+Contains sample-level encryption and decryption information.
+
+The CSV includes:
+
+```text
+Sample_Index
+X
+Y
+Z
+X16_Q8.8
+Y16_Q8.8
+Z16_Q8.8
+Final_Key
+Original_Sample
+Encrypted_Sample
+Decrypted_Sample
+```
+
+## `lorenz_key_stream.csv`
+
+Contains the complete Lorenz sequence and generated key stream.
+
+It includes:
+
+```text
+Index
+X
+Y
+Z
+X16_Q8.8
+Y16_Q8.8
+Z16_Q8.8
+Final_Key
+```
+
+## `waveform_comparison.png`
+
+Contains three waveform plots:
+
+```text
+Original
+Encrypted
+Decrypted
+```
+
+---
+
+# Test Vectors
+
+The notebook displays the first five test vectors for easy inspection.
+
+For each sample, the following information is displayed:
+
+```text
+Original Sample
+X16
+Y16
+Z16
+Final Key
+Encrypted Sample
+Decrypted Sample
+```
+
+A typical encryption relationship is:
+
+```text
+Original Sample XOR Final Key
+          =
+Encrypted Sample
+```
+
+and:
+
+```text
+Encrypted Sample XOR Final Key
+          =
+Decrypted Sample
+```
+
+The complete test-vector dataset is saved to:
+
+```text
+audio_test_vectors.csv
+```
+
+---
+
+# Repository Structure
 
 ```text
 Lorenz-Audio-Encryption/
 │
 ├── README.md
 ├── Lorenz_Audio_Encryption.ipynb
+├── requirements.txt
 │
-├── data/
-│   └── test_sample-6s.wav
+├── input/
+│   └── README.md
 │
 └── output/
+    ├── README.md
     ├── encrypted_audio.wav
     ├── decrypted_audio.wav
-    ├── wave form compare.png
-    └── test_vectors.csv
+    ├── audio_test_vectors.csv
+    ├── lorenz_key_stream.csv
+    └── waveform_comparison.png
 ```
 
-The generated audio files and test vectors are placed in the `output/` directory.
+The generated output files are created after executing the notebook.
 
 ---
 
-## How to Run
+# How to Run
 
-### Google Colab
+## Google Colab
 
-1. Open `Lorenz_Audio_Encryption.ipynb`.
-2. Open the notebook in Google Colab.
-3. Run the notebook from the beginning.
-4. Upload a **16-bit PCM WAV** audio file when prompted.
-5. The program validates the audio format.
-6. The Lorenz chaotic sequence is generated.
-7. A chaotic key stream is generated.
-8. The original audio samples are encrypted using XOR.
-9. The encrypted WAV file is generated.
-10. The encrypted samples are decrypted using the same key.
-11. The decrypted WAV file is generated.
-12. The original and decrypted samples are compared.
-13. SHA-256 hashes are calculated to verify the result.
+### Step 1
 
----
-
-## Output Files
-
-The `output/` directory contains:
-
-### `encrypted_audio.wav`
-
-The encrypted version of the original WAV audio.
-
-### `decrypted_audio.wav`
-
-The audio obtained after applying the same chaotic key stream to the encrypted samples.
-
-### `lorenz_attractor.png`
-
-A visualization of the Lorenz chaotic trajectory.
-
-### `test_vectors.csv`
-
-A CSV file containing sample-level encryption test data.
-
----
-
-## Test Vectors
-
-The test-vector file can contain information such as:
+Open:
 
 ```text
-Sample Index
-Original Sample
-Lorenz X
-Lorenz Y
-Lorenz Z
-Chaotic Key
-Encrypted Sample
-Decrypted Sample
-Verification Result
+Lorenz_Audio_Encryption.ipynb
 ```
 
-These test vectors provide a transparent way to inspect the encryption and decryption process.
+in Google Colab.
+
+### Step 2
+
+Run the notebook from the beginning.
+
+### Step 3
+
+When prompted, upload **one 16-bit PCM WAV audio file**.
+
+### Step 4
+
+The program validates:
+
+```text
+File format
+PCM encoding
+Bit depth
+Channels
+Sample rate
+Number of frames
+```
+
+### Step 5
+
+The Lorenz attractor generates the chaotic X, Y, and Z sequences.
+
+### Step 6
+
+The X, Y, and Z sequences are converted to 16-bit Q8.8 values.
+
+### Step 7
+
+The final chaotic key stream is generated:
+
+```text
+X16 XOR Y16 XOR Z16
+```
+
+### Step 8
+
+The audio is encrypted:
+
+```text
+Audio Sample XOR Chaotic Key
+```
+
+### Step 9
+
+The encrypted audio is saved as:
+
+```text
+encrypted_audio.wav
+```
+
+### Step 10
+
+The encrypted audio is decrypted using the same key stream.
+
+### Step 11
+
+The decrypted audio is saved as:
+
+```text
+decrypted_audio.wav
+```
+
+### Step 12
+
+The program performs:
+
+* Sample-by-sample verification
+* SHA-256 verification
+* Correlation analysis
+* Encryption change analysis
+* Key-stream analysis
+* Waveform comparison
+
+### Step 13
+
+The generated output files are downloaded automatically.
 
 ---
 
-## Verification
+# Example Processing Flow
 
-The decrypted audio is verified against the original audio samples.
-
-The following checks are performed:
-
-| Verification              | Expected Result |
-| ------------------------- | --------------- |
-| Encryption completed      | PASS            |
-| Decryption completed      | PASS            |
-| Sample count preserved    | PASS            |
-| Original = Decrypted      | PASS            |
-| Maximum sample difference | 0               |
-| SHA-256 verification      | PASS            |
-
-Successful decryption should produce exactly the same audio sample data as the original input.
+```text
+                INPUT
+                  │
+                  ▼
+          16-bit PCM WAV
+                  │
+                  ▼
+         Validate Audio File
+                  │
+                  ▼
+           Read PCM Samples
+                  │
+                  ▼
+          Lorenz Attractor
+                  │
+          ┌───────┼───────┐
+          ▼       ▼       ▼
+          X       Y       Z
+          │       │       │
+          ▼       ▼       ▼
+         X16     Y16     Z16
+          │       │       │
+          └───────┼───────┘
+                  ▼
+            XOR Combination
+                  │
+                  ▼
+         16-bit Chaotic Key
+                  │
+                  ▼
+        Sample XOR Key Stream
+                  │
+                  ▼
+          Encrypted WAV
+                  │
+                  ▼
+        Same Key XOR Again
+                  │
+                  ▼
+          Decrypted WAV
+                  │
+                  ▼
+             Verification
+```
 
 ---
+
+# Configuration
+
+The main configurable parameters are:
+
+```text
+SIGMA = 10.0
+RHO = 28.0
+BETA = 8.0 / 3.0
+
+X0 = 1.0
+Y0 = 1.0
+Z0 = 1.0
+
+DT = 0.01
+
+WARMUP_STEPS = 1000
+
+FIXED_POINT_SCALE = 256
+```
+
+Display settings include:
+
+```text
+LORENZ_DISPLAY_STEPS = 5
+
+TEST_VECTOR_DISPLAY = 5
+
+WAVEFORM_SAMPLES = 5000
+```
+
+These display settings control the amount of information shown in the notebook and do not change the encryption method.
+
+---
+
+
+
 
