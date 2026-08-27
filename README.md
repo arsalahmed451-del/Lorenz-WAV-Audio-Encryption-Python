@@ -619,17 +619,13 @@ Lorenz-Audio-Encryption/
 │
 ├── README.md
 ├── Lorenz_Audio_Encryption.ipynb
-├── requirements.txt
 │
-├── input/
-│   └── README.md
+├── data/
+│   └── test_sample-6s_audio.wav
 │
 └── output/
-    ├── README.md
     ├── encrypted_audio.wav
     ├── decrypted_audio.wav
-    ├── audio_test_vectors.csv
-    ├── lorenz_key_stream.csv
     └── waveform_comparison.png
 ```
 
